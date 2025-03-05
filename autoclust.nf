@@ -4,14 +4,16 @@ nextflow.enable.dsl = 2
 
 import java.nio.file.*
 
-params.selector = 'eff'
 params.srv = 30
+params.selector = 'eff'
 params.id = params.srv
 params.cov = params.srv
 params.qcov = params.cov
 params.scov = params.cov
-params.minsize = 5
+params.minsize = 3
 params.block = 100.KB
+
+compressedFasta = params.input.endsWith(".gz")
 
 println("Executor=" + params.executor)
 println("Threads=" + params.threads)
@@ -22,18 +24,17 @@ println("\n")
 
 workflow {
     fasta = Channel.fromPath(params.input)
-    fasta_chunks = Channel.fromPath(params.input).splitFasta(size: params.block, file: true)
-    sorfdb_tsv = Channel.fromPath("${params.db}/sorfdb/sorfdb.*.tsv.gz")
-
     inflation = Channel.of(
-            1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 3.0,
+            1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 3.0,
             3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9, 4.0
           )
 
-    count_fasta_entries(params.input)
-    fasta_count = count_fasta_entries.out.map{f -> f.text.toInteger()}
+    preprocess_fasta(params.input)
 
-    makeblastdb(fasta)
+    fasta_chunks = preprocess_fasta.out.faa.splitFasta(size: params.block, file: true, compress: true)
+    fasta_count = preprocess_fasta.out.count.map{f -> f.text.toInteger()}
+
+    makeblastdb(preprocess_fasta.out.faa)
     blast_input = fasta_chunks.combine(makeblastdb.out)
     blastp(blast_input, fasta_count)
     srv_transform(blastp.out)
@@ -83,7 +84,6 @@ workflow {
     // input: id_subgraph, inflation, clusters -> clusters
     // output: all clusters in one file
     autoclust = mcxdump_clusters.out.map{it[2]}.collectFile(name: 'auto.cluster.tsv',
-                                                            storeDir: "${params.db}/sorfdb/raw/",
                                                             keepHeader: false,
                                                             cache: 'lenient',
                                                             sort: 'hash')
@@ -157,11 +157,10 @@ workflow {
         ppp: it[1] <= 1000
         super5: it[1] > 1000
     }
-    
+
     muscle_ppp(aln.ppp)
     muscle_super5(aln.super5)
-    
-    
+
     // build HMMs based on the multiple alignments
     // input: id_subgraph.cluster_size.counter, sequence_count, id_subgraph.cluster_size.counter.fasta, sprot.fasta
     // output: aln.id_subgraph.cluster_size.counter.afa
@@ -170,24 +169,33 @@ workflow {
 }
 
 
-process count_fasta_entries {
-    conda "$baseDir/envs/db-clustering.yml"
+process preprocess_fasta {
+    cpus (params.threads >= 4 ? 4 : params.threads)
+    memory { 4.GB * task.attempt }
+    maxRetries 3
 
     input:
         path(faa)
 
     output:
-        path('faa.count')
+        path('sorted.faa.gz'), emit: faa
+        path('faa.count'), emit: count
 
     script:
-    """
-    zgrep -c '>' $faa > faa.count
-    """
+    if ( compressedFasta == true )
+        """
+        pigz -dck $faa | grep -v '>' | sort -u | awk 'print ">"\$1"\\n"\$1' | pigz -9 -p ${task.cpus} | \
+        tee sorted.faa.gz | zgrep -c '>' > faa.count
+        """
+    else
+        """
+        grep -v '>' $faa | sort -u | awk 'print ">"\$1"\\n"\$1' | pigz -9 -p ${task.cpus} | \
+        tee sorted.faa.gz | zgrep -c '>' > faa.count
+        """
 }
 
 
 process makeblastdb {
-    conda "$baseDir/envs/db-clustering.yml"
     memory { 4.GB * task.attempt }
 
     input:
@@ -198,16 +206,14 @@ process makeblastdb {
 
     script:
     """
-    gzip -dck $faa > sprot.faa
-    makeblastdb -dbtype prot -hash_index -in sprot.faa -out blastdb
     mkdir blastdb
-    mv blastdb.* blastdb/
+    gzip -dck $faa | \
+    makeblastdb -dbtype prot -hash_index -max_file_sz 4GB -title autoclust -out blastdb/db
     """
 }
 
 
 process blastp {
-    conda "$baseDir/envs/db-clustering.yml"
     memory { 8.GB * task.attempt }
     maxRetries 3
 
@@ -220,16 +226,16 @@ process blastp {
 
     script:
     """
+    pigz -dck $faa | \
     blastp -task blastp-short \
-    -query $faa \
-    -db $db/blastdb \
+    -db $db/db \
     -out blast.tsv \
     -max_target_seqs $count \
     -matrix BLOSUM62 \
     -comp_based_stats 0 \
     -soft_masking false \
     -seg no \
-    -evalue 1 \
+    -evalue 10 \
     -outfmt '6 qseqid sseqid pident length bitscore evalue' \
     -num_threads ${task.cpus}
     """
@@ -237,9 +243,8 @@ process blastp {
 
 
 process compress {
-    publishDir "${params.db}/sorfdb/raw", mode: 'copy', pattern: "*.gz"
-    conda "$baseDir/envs/db-clustering.yml"
-    cpus (params.threads >= 10 ? 10: params.threads)
+    publishDir "${params.db}/sorfdb", mode: 'copy', pattern: "*.gz"
+    cpus (params.threads >= 8 ? 8: params.threads)
     memory { 1.GB * task.attempt }
 
     input:
@@ -256,7 +261,6 @@ process compress {
 
 
 process srv_transform {
-    conda "$baseDir/envs/db-clustering.yml"
     cpus (params.threads >= 2 ? 2 : params.threads)
     memory { 10.GB * task.attempt }
     maxRetries 3
@@ -275,8 +279,6 @@ process srv_transform {
 }
 
 process prune {
-    conda "$baseDir/envs/db-clustering.yml"
-
     input:
         path('srv.tsv')
 
@@ -291,7 +293,6 @@ process prune {
 
 
 process mcxload {
-    conda "$baseDir/envs/db-clustering.yml"
     memory { 32.GB * task.attempt }
 
     input:
@@ -305,10 +306,16 @@ process mcxload {
     mcxload -ri add -tf 'scale(2),gt(${params.srv})' --write-binary -abc srv.tsv -write-tab srv.tab -o srv.mcx
     """
 }
+/*
+    The square of the two SRVs of a protein pair might have interisting features in terms of similarity scaling.
+    Use SRV * 10 as input. Squares are between 0 and 100.
+
+    MINIMUM=\$((${params.srv}*${params.srv}/100))
+    mcxload -ri mul -tf "scale(100),gt(\$MINIMUM)" --write-binary -abc srv.tsv -write-tab srv.tab -o srv.mcx
+*/
 
 
 process mcxalter {
-    conda "$baseDir/envs/db-clustering.yml"
     memory { 32.GB * task.attempt }
 
     input:
@@ -317,28 +324,23 @@ process mcxalter {
     output:
         tuple path('srv.mcx'), path('srv.tab')
 
-    script:
+    script:  // TODO add an additional step for k single digit selection
     """
     TOP=\$(mcx query -imx srv.unaltered.mcx -vary-knn 0/1000/100 -t ${task.cpus} | tee top.txt | \
-    awk '{if (\$4 ~ /^[0-9]+\$/ && \$4>=1) {print x; exit 0};x=\$0}' | head -n1 | awk '{print \$NF}')
-    if [[ \$TOP < 100 ]]; then
-        TOP=100
-        ln -s srv.unaltered.mcx srv.mcx
-    else
-        echo "\$TOP" > top.selected.txt
-        K=\$(mcx query -imx srv.unaltered.mcx -vary-knn \$((\$TOP-100))/\$TOP/10 -t ${task.cpus} | \
-        tee k.txt | awk '{if (\$4 ~ /^[0-9]+\$/ && \$4>=1) {print x; exit 0};x=\$0}' | head -n1 | awk '{print \$NF}')
-        echo "\$K" > k.selected.txt
+    awk '{if (\$4==1) {print x};x=\$0}' | head -n1 | awk '{print \$NF}')
+    echo "\$TOP"
 
-        mcx alter -imx srv.unaltered.mcx -tf "#knn(\$K)" --write-binary -o srv.mcx
-    fi
+    K=\$(mcx query -imx srv.unaltered.mcx -vary-knn \$((\$TOP-100))/\$TOP/10 -t ${task.cpus} | tee k.txt | \
+    awk '{if (\$4==1) {print x};x=\$0}' | head -n1 | awk '{print \$NF}')
+    echo "\$K"
+
+    mcx alter -imx srv.unaltered.mcx -tf "#knn(\$K)" --write-binary -o srv.mcx
     """
 }
 
 
 process mcxdump_abc {
-    publishDir "${params.db}/sorfdb/raw", mode: 'copy', pattern: "pruned.srv.tsv"
-    conda "$baseDir/envs/db-clustering.yml"
+    publishDir "${params.db}/sorfdb/", mode: 'copy', pattern: "pruned.srv.tsv"
 
     input:
         tuple path('srv.mcx'), path('srv.tab')
@@ -354,7 +356,6 @@ process mcxdump_abc {
 
 
 process separate {
-    conda "$baseDir/envs/db-clustering.yml"
     memory { 16.GB * task.attempt }
 
     input:
@@ -371,7 +372,6 @@ process separate {
 
 
 process mcxload2 {
-    conda "$baseDir/envs/db-clustering.yml"
     memory { 8.GB * task.attempt }
 
     input:
@@ -388,7 +388,6 @@ process mcxload2 {
 
 
 process mcl {
-    conda "$baseDir/envs/db-clustering.yml"
     cpus { params.threads >= 4 * task.attempt * task.attempt ? 4 * task.attempt * task.attempt : params.threads }
     memory { 1.GB * task.attempt }
 
@@ -409,8 +408,7 @@ process mcl {
 
 
 process clm {
-    publishDir "${params.db}/sorfdb/raw/clm/", mode: 'copy', pattern: "*.txt"
-    conda "$baseDir/envs/db-clustering.yml"
+    publishDir "${params.db}/sorfdb/clm/", mode: 'copy', pattern: "*.txt"
     memory { 4.GB * task.attempt }
 
     input:
@@ -429,8 +427,6 @@ process clm {
 
 
 process mcxdump_clusters {
-    conda "$baseDir/envs/db-clustering.yml"
-
     input:
         tuple val(id), val(inflation), path(mci), path('srv.tab')
 
@@ -445,8 +441,6 @@ process mcxdump_clusters {
 
 
 process mcxdump_for_cytoscape {
-    conda "$baseDir/envs/db-clustering.yml"
-
     input:
         tuple val(inflation), path(mci), path('srv.tab')
 
@@ -461,8 +455,7 @@ process mcxdump_for_cytoscape {
 
 
 process cytoscape {
-    publishDir "${params.db}/sorfdb/raw", mode: 'copy', pattern: "srv.clustered.tsv"
-    conda "$baseDir/envs/db-clustering.yml"
+    publishDir "${params.db}/sorfdb/", mode: 'copy', pattern: "srv.clustered.tsv"
     memory { 64.GB * task.attempt }
 
     input:
@@ -482,8 +475,6 @@ process cytoscape {
 
 
 process export_clusters_to_fasta {
-    conda "$baseDir/envs/db-clustering.yml"
-
     input:
         tuple val(id), val(inflation), path(clusters)
 
@@ -492,14 +483,13 @@ process export_clusters_to_fasta {
 
     script:
     """
-    split_clusters_for_alignment.py --input $clusters --id $id --size ${params.minsize}
+    split_clusters_for_alignment.py --input $clusters --id $id
     """
 }
 
 
 process muscle_ppp {
-    publishDir "${params.db}/sorfdb/raw/aln${params.cov}", mode: 'copy', pattern: "aln.*.afa"
-    conda "$baseDir/envs/db-clustering.yml"
+    publishDir "${params.db}/sorfdb/aln", mode: 'copy', pattern: "aln.*.afa"
     cpus (params.threads >= 8 ? 8 : params.threads)
     memory { 2.GB * task.attempt }
     maxRetries = 5
@@ -518,8 +508,7 @@ process muscle_ppp {
 
 
 process muscle_super5 {
-    publishDir "${params.db}/sorfdb/raw/aln${params.cov}", mode: 'copy', pattern: "aln.*.afa"
-    conda "$baseDir/envs/db-clustering.yml"
+    publishDir "${params.db}/sorfdb/aln", mode: 'copy', pattern: "aln.*.afa"
     cpus (params.threads >= 16 ? 16 : params.threads)
     memory { 4.GB * task.attempt }
     maxRetries = 3
@@ -538,8 +527,7 @@ process muscle_super5 {
 
 
 process hmm_build {
-    publishDir "${params.db}/sorfdb", mode: 'copy', pattern: "sorfdb.clusters.*.tsv.gz"
-    conda "$baseDir/envs/db-clustering.yml"
+    publishDir "${params.db}/sorfdb", mode: 'copy', pattern: "clusters.*.tsv.gz"
     memory { 64.GB * task.attempt }
 
     input:
@@ -549,7 +537,7 @@ process hmm_build {
 
     output:
         path("*.hmm"), emit: hmm
-        path("sorfdb.clusters.*.tsv.gz"), emit: clusters
+        path("clusters.*.tsv.gz"), emit: clusters
 
     script:
     """
@@ -559,9 +547,7 @@ process hmm_build {
 
 process compress_hmm {
     publishDir "${params.db}/sorfdb", mode: 'copy', pattern: "*.hmm.gz"
-    conda "$baseDir/envs/db-clustering.yml"
     memory { 8.GB * task.attempt }
-    cpus (params.threads >= 4 ? 4 : params.threads)
 
     input:
         path(hmm)
