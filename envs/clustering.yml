@@ -1,0 +1,14 @@
+name: clustering
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python>=3.12
+  - xopen>=2.0.2
+  - pyhmmer>=0.11.0
+  - pytrimal>=0.8.0
+  - numpy>=2.2.3
+  - polars>=1.24.0
+  - blast>=2.16.0
+  - mcl>=22.282
+  - muscle>=5.3
