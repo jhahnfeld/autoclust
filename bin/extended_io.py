@@ -123,9 +123,6 @@ def find_files(path: Union[str, Path], pattern: str | Pattern[str], regex: bool 
             if regex and isinstance(pattern, Pattern):
                 if pattern.match(file) is not None:
                     yield Path(os.path.join(root, file))
-            elif isinstance(pattern, str)
+            elif isinstance(pattern, str):
                 if pattern in str(file):
                     yield Path(os.path.join(root, file))
-
-
-# EOF
