@@ -215,6 +215,7 @@ process makeblastdb {
 process blastp {
     memory { 8.GB * task.attempt }
     maxRetries 3
+    array params.array
 
     input:
         tuple path(faa), path(db)
@@ -263,6 +264,7 @@ process srv_transform {
     cpus (params.threads >= 2 ? 2 : params.threads)
     memory { 10.GB * task.attempt }
     maxRetries 3
+    array params.array
 
     input:
         path('blast.tsv')
@@ -389,6 +391,7 @@ process mcxload2 {
 process mcl {
     cpus { params.threads >= 4 * task.attempt * task.attempt ? 4 * task.attempt * task.attempt : params.threads }
     memory { 1.GB * task.attempt }
+    array params.array
 
     input:
         tuple val(inflation), val(id), path('srv.mcx'), path('srv.tab')
@@ -409,6 +412,7 @@ process mcl {
 process clm {
     publishDir "${params.output}/clm/", mode: 'copy', pattern: "*.txt"
     memory { 4.GB * task.attempt }
+    array params.array
 
     input:
         tuple val(id), val(inflations), path(clusters), path('srv.mcx'), path('srv.tab')
@@ -426,6 +430,8 @@ process clm {
 
 
 process mcxdump_clusters {
+    array params.array
+
     input:
         tuple val(id), val(inflation), path(mci), path('srv.tab')
 
@@ -440,6 +446,8 @@ process mcxdump_clusters {
 
 
 process mcxdump_for_cytoscape {
+    array params.array
+
     input:
         tuple val(inflation), path(mci), path('srv.tab')
 
@@ -473,6 +481,8 @@ process cytoscape {
 
 
 process export_clusters_to_fasta {
+    array params.array
+
     input:
         tuple val(id), val(inflation), path(clusters)
 
@@ -491,6 +501,7 @@ process muscle_ppp {
     cpus (params.threads >= 8 ? 8 : params.threads)
     memory { 2.GB * task.attempt }
     maxRetries = 5
+    array params.array
 
     input:
         tuple val(identifier), val(size), path(fasta)
@@ -510,6 +521,7 @@ process muscle_super5 {
     cpus (params.threads >= 16 ? 16 : params.threads)
     memory { 4.GB * task.attempt }
     maxRetries = 3
+    array params.array
 
     input:
         tuple val(identifier), val(size), path(fasta)
