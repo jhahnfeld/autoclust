@@ -4,12 +4,10 @@ import csv
 from argparse import ArgumentParser
 from math import floor
 from pathlib import Path
-from typing import Iterator, NamedTuple, Optional, Union
+from typing import Iterator, NamedTuple, Optional
 
 import extended_io as eio
-import polars as pl
 import pyhmmer
-from constants import HMM_MAX_SPROT_LENGTH, HYPOTHETICAL_PRODUCT_NAMES, SORFDB_VER
 from xopen import xopen
 
 
@@ -18,77 +16,6 @@ class HmmHit(NamedTuple):
     best_domain_score: float
     included: bool
     sequence: bytes
-
-
-def load_db(db_path: Path) -> pl.DataFrame:
-    """
-    Import the protein sequences and products from the (compressed) sorfdb.
-    :param db_path: path to sorfdb file
-    :return: Dataframe with proteins and products from sorfdb
-    """
-    compressed: bool = str(db_path).endswith(".gz")
-    if compressed:
-        opener = pl.read_csv(db_path, separator="\t").lazy()
-    else:
-        opener = pl.scan_csv(db_path, separator="\t")
-
-    db_df: Union[pl.DataFrame, pl.LazyFrame]
-    db_df = (
-        opener.select(pl.col("protein"), pl.col("product"))
-        .filter(
-            (pl.col("protein").str.len_chars() <= HMM_MAX_SPROT_LENGTH)
-            & (
-                ~pl.col("product")
-                .str.to_lowercase()
-                .is_in(pl.Series("hypothetical_product_names", [term for term in HYPOTHETICAL_PRODUCT_NAMES]))
-            )
-        )
-        .with_columns(
-            pl.col("product").map_elements(
-                lambda x: x.split(" (")[0]
-            )  # Cut off reference ids of revised hypothetical products
-        )
-    )
-    return db_df.collect()
-
-
-def create_cluster_name(proteins: pl.Series, db_frame: pl.DataFrame) -> bytes:
-    """
-    Create a name of the given proteins based on a major vote on their protein product.
-    :param proteins: proteins of a cluster
-    :param db_frame: database with protein descriptions
-    :return:
-    """
-    # one most common product
-    name_frame = (
-        db_frame.lazy()
-        .filter(pl.col("protein").is_in(proteins))
-        .select(pl.col("product"))
-        .group_by("product")
-        .count()
-        .filter(pl.col("count") == pl.col("count").max())
-        .collect()
-    )
-
-    name: bytes
-    if name_frame.shape[0] == 1:
-        name = bytes(name_frame.to_series().to_list()[0], "UTF-8")
-    else:
-        # one most common product in lower case
-        name_frame = (
-            db_frame.lazy()
-            .filter(pl.col("protein").is_in(proteins))
-            .select(pl.col("product").str.to_lowercase())
-            .group_by("product")
-            .count()
-            .filter(pl.col("count") == pl.col("count").max())
-            .collect()
-        )
-        if name_frame.shape[0] == 1:
-            name = bytes(name_frame.to_series().to_list()[0], "UTF-8")
-        else:
-            name = bytes("", "UTF-8")
-    return name.strip()
 
 
 def msa_proteins_to_digital_seqs(
@@ -179,7 +106,6 @@ def parse_arguments():
     parser = ArgumentParser(description="Import a SRV abc file and exclude single hits.")
     parser.add_argument("--alignments", "-a", type=Path, help="Input path to directory with alignment files *.aln")
     parser.add_argument("--proteins", "-p", type=Path, help="Input complete sORF FASTA file.")
-    parser.add_argument("--sorfdb", "-s", type=Path, help="Input sorfdb.tsv(.gz)")
     parser.add_argument("--output", "-o", type=Path, default=Path("./"), help="Output folder path")
     parser.add_argument("--threads", "-t", type=int, default=1, help="Number of threads")
     args = parser.parse_args()
@@ -189,9 +115,6 @@ def parse_arguments():
 def main():
     args = parse_arguments()
 
-    print("Load sORFDB...")
-    sorfdb_df: pl.DataFrame = load_db(args.sorfdb)
-
     alphabet: pyhmmer.easel.Alphabet = pyhmmer.easel.Alphabet.amino()
     builder: pyhmmer.plan7.Builder = pyhmmer.plan7.Builder(alphabet)
     background: pyhmmer.plan7.Background = pyhmmer.plan7.Background(alphabet)
@@ -199,9 +122,9 @@ def main():
 
     print("Build HMMs...")
     with (
-        open(args.output.joinpath(f"sorfdb.{SORFDB_VER}.hmm"), "wb") as hmm_file,
+        open(args.output.joinpath("autoclust.hmm"), "wb") as hmm_file,
         xopen(
-            args.output.joinpath(f"sorfdb.clusters.{SORFDB_VER}.tsv.gz"), "w", compresslevel=9, threads=args.threads
+            args.output.joinpath("autoclust.clusters..tsv.gz"), "w", compresslevel=9, threads=args.threads
         ) as cluster_file,
     ):
         cluster_tsv = csv.writer(cluster_file, delimiter="\t", lineterminator="\n")
@@ -211,12 +134,7 @@ def main():
             with pyhmmer.easel.MSAFile(aln, format="afa") as msa_file:
                 msa: pyhmmer.easel.TextMSA = msa_file.read()
 
-                cluster_description: bytes = create_cluster_name(
-                    pl.Series("proteins", [protein.decode("UTF-8") for protein in msa.names]), sorfdb_df
-                )
-                cluster_id: bytes = f"{SORFDB_VER}-{str(aln).split('/')[-1].lstrip('aln.').rstrip('.afa')}".encode(
-                    "UTF-8"
-                )
+                cluster_id: bytes = f"{str(aln).split('/')[-1].lstrip('aln.').rstrip('.afa')}".encode("UTF-8")
                 msa.name = cluster_id  # cluster ID: id_subgraph.cluster_size.counter
 
                 digital_msa: pyhmmer.easel.DigitalMSA = msa.digitize(alphabet)
@@ -224,8 +142,6 @@ def main():
 
                 # field names: http://eddylab.org/software/hmmer/Userguide.pdf page 209
                 hmm.accession = cluster_id
-                if cluster_description is not None and len(cluster_description) > 0:
-                    hmm.description = cluster_description
 
                 proteins: list[pyhmmer.easel.DigitalSequence] = msa_proteins_to_digital_seqs(
                     digital_msa.names, alphabet=alphabet

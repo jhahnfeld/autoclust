@@ -122,10 +122,9 @@ workflow {
     ).collect()
 
     // export the graph with cluster information for cytoscape
-    // input: srv.tsv; sorfdb; autoclust_clusters; clusters_for_all_inflations
+    // input: srv.tsv; autoclust_clusters; clusters_for_all_inflations
     // output: grraph_with_cluster_information
     cytoscape(mcxdump_abc.out,
-              sorfdb_tsv,
               autoclust,
               clusters_by_inflation)
 
@@ -164,7 +163,7 @@ workflow {
     // build HMMs based on the multiple alignments
     // input: id_subgraph.cluster_size.counter, sequence_count, id_subgraph.cluster_size.counter.fasta, sprot.fasta
     // output: aln.id_subgraph.cluster_size.counter.afa
-    hmm_build(muscle_ppp.out.concat(muscle_super5.out).collect(), sorfdb_tsv, fasta)
+    hmm_build(muscle_ppp.out.concat(muscle_super5.out).collect(), fasta)
     compress_hmm(hmm_build.out.hmm)
 }
 
@@ -460,7 +459,6 @@ process cytoscape {
 
     input:
         path('srv.tsv')
-        path(sorfdb)
         path(autoclust)
         path(clusters)
 
@@ -469,7 +467,7 @@ process cytoscape {
 
     script:
     """
-    export_to_cytoscape.py --abc srv.tsv --sorfdb $sorfdb --autoclust $autoclust --cluster $clusters
+    export_to_cytoscape.py --abc srv.tsv --autoclust $autoclust --cluster $clusters
     """
 }
 
@@ -532,7 +530,6 @@ process hmm_build {
 
     input:
         path(aln)
-        path(sorfdb)
         path(fasta)
 
     output:
@@ -541,7 +538,7 @@ process hmm_build {
 
     script:
     """
-    alignement_to_hmm.py --sorfdb $sorfdb --proteins $fasta --alignments ./
+    alignement_to_hmm.py --proteins $fasta --alignments ./
     """
 }
 
