@@ -49,7 +49,7 @@ workflow {
     prune(srv_transform.out.collectFile(name: 'srv.tsv',
                                         keepHeader: false,
                                         cache: 'lenient',
-                                        sort: 'hash'))  // storeDir: "${params.db}/sorfdb",
+                                        sort: 'hash'))
 
     // load to binary mcl matrix; make the matrix symmetric (mean of SRVs)
     mcxload(prune.out)
@@ -243,7 +243,7 @@ process blastp {
 
 
 process compress {
-    publishDir "${params.db}/sorfdb", mode: 'copy', pattern: "*.gz"
+    publishDir "${params.output}", mode: 'copy', pattern: "*.gz"
     cpus (params.threads >= 8 ? 8: params.threads)
     memory { 1.GB * task.attempt }
 
@@ -340,7 +340,7 @@ process mcxalter {
 
 
 process mcxdump_abc {
-    publishDir "${params.db}/sorfdb/", mode: 'copy', pattern: "pruned.srv.tsv"
+    publishDir "${params.output}/srv", mode: 'copy', pattern: "pruned.srv.tsv"
 
     input:
         tuple path('srv.mcx'), path('srv.tab')
@@ -408,7 +408,7 @@ process mcl {
 
 
 process clm {
-    publishDir "${params.db}/sorfdb/clm/", mode: 'copy', pattern: "*.txt"
+    publishDir "${params.output}/clm/", mode: 'copy', pattern: "*.txt"
     memory { 4.GB * task.attempt }
 
     input:
@@ -455,7 +455,7 @@ process mcxdump_for_cytoscape {
 
 
 process cytoscape {
-    publishDir "${params.db}/sorfdb/", mode: 'copy', pattern: "srv.clustered.tsv"
+    publishDir "${params.output}/srv", mode: 'copy', pattern: "srv.clustered.tsv"
     memory { 64.GB * task.attempt }
 
     input:
@@ -489,7 +489,7 @@ process export_clusters_to_fasta {
 
 
 process muscle_ppp {
-    publishDir "${params.db}/sorfdb/aln", mode: 'copy', pattern: "aln.*.afa"
+    publishDir "${params.output}/aln", mode: 'copy', pattern: "aln.*.afa"
     cpus (params.threads >= 8 ? 8 : params.threads)
     memory { 2.GB * task.attempt }
     maxRetries = 5
@@ -508,7 +508,7 @@ process muscle_ppp {
 
 
 process muscle_super5 {
-    publishDir "${params.db}/sorfdb/aln", mode: 'copy', pattern: "aln.*.afa"
+    publishDir "${params.output}/aln", mode: 'copy', pattern: "aln.*.afa"
     cpus (params.threads >= 16 ? 16 : params.threads)
     memory { 4.GB * task.attempt }
     maxRetries = 3
@@ -527,7 +527,7 @@ process muscle_super5 {
 
 
 process hmm_build {
-    publishDir "${params.db}/sorfdb", mode: 'copy', pattern: "clusters.*.tsv.gz"
+    publishDir "${params.output}", mode: 'copy', pattern: "clusters.*.tsv.gz"
     memory { 64.GB * task.attempt }
 
     input:
@@ -546,7 +546,7 @@ process hmm_build {
 }
 
 process compress_hmm {
-    publishDir "${params.db}/sorfdb", mode: 'copy', pattern: "*.hmm.gz"
+    publishDir "${params.output}", mode: 'copy', pattern: "*.hmm.gz"
     memory { 8.GB * task.attempt }
 
     input:
