@@ -51,11 +51,7 @@ def parse_arguments():
     parser.add_argument("--input", "-i", type=Path, help="Input a BLAST TSV file with outfmt 6")
     parser.add_argument("--output", "-o", type=Path, default=Path("./"), help="Output folder path")
     parser.add_argument(
-        "--mode",
-        "-m", default="blast",
-        type=str,
-        choices=("diamond", "blast"),
-        help='Mode for "diamond" or "blast"'
+        "--mode", "-m", default="blast", type=str, choices=("diamond", "blast"), help='Mode for "diamond" or "blast"'
     )
     parser.add_argument(
         "--minsrv",
@@ -133,7 +129,7 @@ def main():
             )
             .select(pl.col("query"), pl.col("subject"), pl.col("bitscore"))
             .group_by("query", "subject")
-            .agg(pl.col("bitscore").max())
+            .agg(pl.col("bitscore").max())  # Only one hit per sequence (if several hsp hits cause matches)
             .collect()
         )
 
@@ -141,27 +137,20 @@ def main():
     df = df.filter(
         ~pl.col("query").is_in(
             df.group_by("query")
-            .count()
-            .filter(pl.col("count") == 1)
+            .len()
+            .filter(pl.col("len") == 1)
             .filter(
                 # unique query is in unique subject == self-hit
-                pl.col("query").is_in(
-                    df.group_by("subject").count().filter(pl.col("count") == 1).select(pl.col("subject")).to_series()
-                )
+                pl.col("query").is_in(df.group_by("subject").len().filter(pl.col("len") == 1).get_column("subject"))
             )
-            .select("query")
-            .to_series()
+            .get_column("query")
         )
     ).rechunk()
 
-    print("Transform to matrix...")
-    df = df.pivot(
-        index="subject", on="query", values="bitscore"
-    )  # .fill_null(0) do not fill nulls to create a sparse matrix
+    # TODO Replace SRV calculation code, see positive negative filtering code
 
-    # print('Write bitscore matrix...')
-    # with xopen(args.output.joinpath('bitscore.matrix.tsv.gz'), 'w', compresslevel=9, threads=args.threads) as of:
-    #     of.write(df.write_csv(separator='\t'))
+    print("Transform to matrix...")
+    df = df.pivot(index="subject", on="query", values="bitscore")
 
     print("Calculate and rescale SRVs...")
     df = (
@@ -175,25 +164,8 @@ def main():
         .collect()
     )
 
-    # print('Write SRV matrix...')
-    # with xopen(args.output.joinpath('srv.matrix.tsv.gz'), 'w', compresslevel=9, threads=args.threads) as of:
-    #     of.write(df.write_csv(separator='\t'))
-
     print("Reformat to abc format...")
     df = sequential_melt(df, minsrv=float(args.minsrv))
-
-    # Uses too much RAM
-    # df = df.lazy().melt(
-    #     id_vars='subject',
-    #     variable_name='query',
-    #     value_name='srv'
-    # ).drop_nulls().filter(
-    #     pl.col('srv') >= args.minsrv
-    # ).select(
-    #     [pl.col('query'),
-    #      pl.col('subject'),
-    #      pl.col('srv')]
-    # ).collect()  # .sort(['query', 'subject'])
 
     print("Pruning & rounding...")  # exclude all self hits
     df = df.filter(pl.col("query") != pl.col("subject")).select(
@@ -201,9 +173,6 @@ def main():
     )
 
     print("Write SRV.abc...")
-    # with xopen(args.output.joinpath('srv.tsv.gz'), 'w', compresslevel=9, threads=args.threads) as of:
-    #     of.write(df.write_csv(separator='\t'))
-
     df.write_csv(file=str(args.output.joinpath("srv.tsv")), separator="\t", include_header=False)
 
 
