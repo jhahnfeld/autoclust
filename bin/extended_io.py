@@ -1,8 +1,7 @@
-
-import os
 import json
+import os
 from pathlib import Path
-from typing import Generator, Optional, Union
+from typing import Generator, Optional, Pattern, Union
 
 from xopen import xopen
 
@@ -13,12 +12,18 @@ def load_json(file_path: Union[str, Path]) -> dict:
     :param file_path: Path to (compressed) JSON file
     :return: Dictionary from given file
     """
-    with xopen(file_path, mode='r') as f:
+    with xopen(file_path, mode="r") as f:
         return json.load(f)
 
 
-def export_to_json(data: dict, file_path: Union[str, Path], single_line: bool = False, threads: Optional[int] = None,
-                   compresslevel: Optional[int] = 9, indent: int = 0):
+def export_to_json(
+    data: dict,
+    file_path: Union[str, Path],
+    single_line: bool = False,
+    threads: Optional[int] = None,
+    compresslevel: Optional[int] = 9,
+    indent: int = 0,
+):
     """
     Export a dictionary into a (compressed) JSON file.
     :param data: Dictionary with extracted sORFs
@@ -28,15 +33,16 @@ def export_to_json(data: dict, file_path: Union[str, Path], single_line: bool = 
     :param compresslevel: Compression level for file compression
     :param indent: Indentation of JSON file
     """
-    with xopen(file_path, mode='w', compresslevel=compresslevel, threads=threads) as f:
+    with xopen(file_path, mode="w", compresslevel=compresslevel, threads=threads) as f:
         if single_line:
             json.dump(data, f)
         else:
             f.write(json.dumps(data, indent=indent))
 
 
-def dict_to_fasta(data: dict[str, str], file_path: Union[str, Path], threads: Optional[int] = None,
-                  compresslevel: int = 9):
+def dict_to_fasta(
+    data: dict[str, str], file_path: Union[str, Path], threads: Optional[int] = None, compresslevel: int = 9
+):
     """
     Export a dictionary with header: sequence entries to a FASTA file.
     :param data: Dictionary with header: sequence entries
@@ -44,13 +50,18 @@ def dict_to_fasta(data: dict[str, str], file_path: Union[str, Path], threads: Op
     :param threads: Number of threads for file compression
     :param compresslevel: Compression level for file compression
     """
-    with xopen(file_path, mode='w', compresslevel=compresslevel, threads=threads) as f:
+    with xopen(file_path, mode="w", compresslevel=compresslevel, threads=threads) as f:
         for header, sequence in data.items():
             f.write(f">{header}\n{sequence}\n")
 
 
-def list_to_fasta(data: list[str], file_path: Union[str, Path], mode: str = 'sequences', threads: Optional[int] = None,
-                  compresslevel: int = 9):
+def list_to_fasta(
+    data: list[str],
+    file_path: Union[str, Path],
+    mode: str = "sequences",
+    threads: Optional[int] = None,
+    compresslevel: int = 9,
+):
     """
     Export a dictionary with header: sequence entries to a FASTA file.
     :param data: List with either header and sequences or sequences only
@@ -59,11 +70,11 @@ def list_to_fasta(data: list[str], file_path: Union[str, Path], mode: str = 'seq
     :param threads: Number of threads for file compression
     :param compresslevel: Compression level for file compression
     """
-    with xopen(file_path, mode='w', compresslevel=compresslevel, threads=threads) as f:
-        if mode == 'sequences':
+    with xopen(file_path, mode="w", compresslevel=compresslevel, threads=threads) as f:
+        if mode == "sequences":
             for header, sequence in enumerate(data):
                 f.write(f">{header}\n{sequence}\n")
-        elif mode == 'interleaved':
+        elif mode == "interleaved":
             for i, element in enumerate(data):
                 if i == 0 or i % 2 == 0:
                     f.write(f">{element}\n")  # header
@@ -79,21 +90,21 @@ def parse_fasta(file_path: Path) -> Generator[tuple[str, str], None, None]:
     """
     header: Optional[str] = None
     seqs: list[str] = []
-    with xopen(file_path, mode='r') as f:
+    with xopen(file_path, mode="r") as f:
         for line in f:
             line: str = line.strip()
-            if line.startswith('>'):
+            if line.startswith(">"):
                 if header is not None:
-                    yield header, ''.join(seqs)
+                    yield header, "".join(seqs)
                     seqs = []
-                header = line.lstrip('>')
+                header = line.lstrip(">")
             else:
                 seqs.append(line)
         if header is not None and len(seqs) > 0:
-            yield header, ''.join(seqs)
+            yield header, "".join(seqs)
 
 
-def find_files(path: Union[str, Path], pattern: str, regex: bool = True) -> Generator[Path, None, None]:
+def find_files(path: Union[str, Path], pattern: str | Pattern[str], regex: bool = True) -> Generator[Path, None, None]:
     """
     Find all files matching the given pattern in the given directory.
     :param path: Path to directory
@@ -104,15 +115,17 @@ def find_files(path: Union[str, Path], pattern: str, regex: bool = True) -> Gene
     path = str(Path(path))
     if regex:
         import re
+
         pattern = re.compile(pattern)
 
     for root, directories, files in os.walk(path):
         for file in files:
-            if regex:
+            if regex and isinstance(pattern, Pattern):
                 if pattern.match(file) is not None:
                     yield Path(os.path.join(root, file))
-            elif pattern in str(file):
-                yield Path(os.path.join(root, file))
+            elif isinstance(pattern, str)
+                if pattern in str(file):
+                    yield Path(os.path.join(root, file))
 
 
 # EOF
