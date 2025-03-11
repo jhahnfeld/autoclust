@@ -540,8 +540,8 @@ process hmm_build {
         path(fasta)
 
     output:
-        path("*.hmm"), emit: hmm
-        path("clusters.tsv.gz"), emit: clusters
+        path("autoclust.hmm"), emit: hmm
+        path("autoclust.clusters.tsv.gz"), emit: clusters
 
     script:
     """
