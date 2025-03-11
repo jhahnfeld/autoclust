@@ -124,7 +124,7 @@ def main():
     with (
         open(args.output.joinpath("autoclust.hmm"), "wb") as hmm_file,
         xopen(
-            args.output.joinpath("autoclust.clusters..tsv.gz"), "w", compresslevel=9, threads=args.threads
+            args.output.joinpath("autoclust.clusters.tsv.gz"), "w", compresslevel=9, threads=args.threads
         ) as cluster_file,
     ):
         cluster_tsv = csv.writer(cluster_file, delimiter="\t", lineterminator="\n")
