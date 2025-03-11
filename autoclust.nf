@@ -29,7 +29,7 @@ workflow {
             3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9, 4.0
           )
 
-    preprocess_fasta(params.input)
+    preprocess_fasta(fasta)
 
     fasta_chunks = preprocess_fasta.out.faa.splitFasta(size: params.block, file: true, compress: true)
     fasta_count = preprocess_fasta.out.count.map{f -> f.text.toInteger()}
@@ -112,21 +112,21 @@ workflow {
     // dump clusters for all inflation values for each subgraph
     // input: inflation, mci.I, tab
     // output: inflation, clusters
-    mcxdump_for_cytoscape(clusters_by_inflation)
+    // mcxdump_for_cytoscape(clusters_by_inflation)
 
     // group clusters by inflation value
-    clusters_by_inflation = mcxdump_for_cytoscape.out.groupTuple().map{it[1]}.flatten().collectFile(
-        keepHeader: false,
-        cache: 'lenient',
-        sort: 'hash'
-    ).collect()
+    //clusters_by_inflation = mcxdump_for_cytoscape.out.groupTuple().map{it[1]}.flatten().collectFile(
+    //    keepHeader: false,
+    //    cache: 'lenient',
+    //    sort: 'hash'
+    //).collect()
 
     // export the graph with cluster information for cytoscape
     // input: srv.tsv; autoclust_clusters; clusters_for_all_inflations
     // output: grraph_with_cluster_information
-    cytoscape(mcxdump_abc.out,
-              autoclust,
-              clusters_by_inflation)
+    //cytoscape(mcxdump_abc.out,
+    //          autoclust,
+    //          clusters_by_inflation)
 
     // export all clusters to fasta files
     // input: id_subgraph, inflation, clusters
@@ -183,12 +183,12 @@ process preprocess_fasta {
     script:
     if ( compressedFasta == true )
         """
-        pigz -dck $faa | grep -v '>' | sort -u | awk 'print ">"\$1"\\n"\$1' | pigz -9 -p ${task.cpus} | \
+        pigz -dck $faa | grep -v '>' | sort -u | awk '{print ">"\$1"\\n"\$1}' | pigz -9 -p ${task.cpus} | \
         tee sorted.faa.gz | zgrep -c '>' > faa.count
         """
     else
         """
-        grep -v '>' $faa | sort -u | awk 'print ">"\$1"\\n"\$1' | pigz -9 -p ${task.cpus} | \
+        grep -v '>' $faa | sort -u | awk '{print ">"\$1"\\n"\$1}' | pigz -9 -p ${task.cpus} | \
         tee sorted.faa.gz | zgrep -c '>' > faa.count
         """
 }
@@ -327,13 +327,8 @@ process mcxalter {
 
     script:  // TODO add an additional step for k single digit selection
     """
-    TOP=\$(mcx query -imx srv.unaltered.mcx -vary-knn 0/1000/100 -t ${task.cpus} | tee top.txt | \
-    awk '{if (\$4==1) {print x};x=\$0}' | head -n1 | awk '{print \$NF}')
-    echo "\$TOP"
-
-    K=\$(mcx query -imx srv.unaltered.mcx -vary-knn \$((\$TOP-100))/\$TOP/10 -t ${task.cpus} | tee k.txt | \
-    awk '{if (\$4==1) {print x};x=\$0}' | head -n1 | awk '{print \$NF}')
-    echo "\$K"
+    K=\$(top_k_edges.py --imx srv.unaltered.mcx -t ${task.cpus})
+    echo \$K | tee k.txt
 
     mcx alter -imx srv.unaltered.mcx -tf "#knn(\$K)" --write-binary -o srv.mcx
     """
@@ -546,7 +541,7 @@ process hmm_build {
 
     output:
         path("*.hmm"), emit: hmm
-        path("clusters.*.tsv.gz"), emit: clusters
+        path("clusters.tsv.gz"), emit: clusters
 
     script:
     """
