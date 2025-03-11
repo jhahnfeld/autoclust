@@ -146,26 +146,22 @@ def main():
         #     keep='none'
         # ).collect().to_series().to_list())
 
-        df = (
-            pl.scan_csv(
-                args.input,
-                has_header=False,
-                new_columns=["query", "subject", "srv"],
-                schema_overrides={"srv": pl.Float64},
-                low_memory=True,
-                separator="\t",
-            )
-            .filter(~(pl.col("query").is_unique()) & ~(pl.col("subject").is_unique()))
-            .collect()
-        )
+        df = pl.scan_csv(
+            args.input,
+            has_header=False,
+            new_columns=["query", "subject", "srv"],
+            schema_overrides={"srv": pl.Float64},
+            low_memory=True,
+            separator="\t",
+        ).filter(~((pl.col("query").is_unique()) & (pl.col("subject").is_unique())))
 
         if args.compress:
             with xopen(
                 args.output.joinpath("pruned.srv.tsv.gz"), "w", compresslevel=9, threads=args.threads
             ) as file_out:
-                file_out.write(df.write_csv(separator="\t", include_header=False))
+                file_out.write(df.collect().write_csv(separator="\t", include_header=False))
         else:
-            df.write_csv(args.output.joinpath("pruned.srv.tsv"), separator="\t", include_header=False)
+            df.sink_csv(args.output.joinpath("pruned.srv.tsv"), separator="\t", include_header=False)
 
 
 if __name__ == "__main__":
