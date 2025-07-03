@@ -124,9 +124,8 @@ workflow {
     // export the graph with cluster information for cytoscape
     // input: srv.tsv; autoclust_clusters; clusters_for_all_inflations
     // output: grraph_with_cluster_information
-    //cytoscape(mcxdump_abc.out,
-    //          autoclust,
-    //          clusters_by_inflation)
+    cytoscape(mcxdump_abc.out,
+              autoclust)
 
     // export all clusters to fasta files
     // input: id_subgraph, inflation, clusters
@@ -463,14 +462,13 @@ process cytoscape {
     input:
         path('srv.tsv')
         path(autoclust)
-        path(clusters)
 
     output:
         path('srv.clustered.tsv')
 
     script:
     """
-    export_to_cytoscape.py --abc srv.tsv --autoclust $autoclust --cluster $clusters
+    export_to_cytoscape.py --abc srv.tsv --autoclust $autoclust
     """
 }
 
@@ -532,7 +530,7 @@ process muscle_super5 {
 
 
 process hmm_build {
-    publishDir "${params.output}", mode: 'copy', pattern: "clusters.*.tsv.gz"
+    publishDir "${params.output}", mode: 'copy', pattern: "autoclust.clusters.tsv.gz"
     memory { 64.GB * task.attempt }
 
     input:
