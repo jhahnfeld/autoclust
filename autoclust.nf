@@ -182,12 +182,12 @@ process preprocess_fasta {
     script:
     if ( compressedFasta == true )
         """
-        pigz -dck $faa | grep -v '>' | sort -u | awk '{print ">"\$1"\\n"\$1}' | pigz -9 -p ${task.cpus} | \
+        pigz -dck $faa | grep -v '>' | sort -u | shuf | awk '{print ">"i++; print \$1}' | pigz -9 -p ${task.cpus} | \
         tee sorted.faa.gz | zgrep -c '>' > faa.count
         """
     else
         """
-        grep -v '>' $faa | sort -u | awk '{print ">"\$1"\\n"\$1}' | pigz -9 -p ${task.cpus} | \
+        grep -v '>' $faa | sort -u | shuf | awk '{print ">"i++; print \$1}' | pigz -9 -p ${task.cpus} | \
         tee sorted.faa.gz | zgrep -c '>' > faa.count
         """
 }
