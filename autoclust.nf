@@ -35,8 +35,8 @@ workflow {
     fasta_count = preprocess_fasta.out.count.map{f -> f.text.toInteger()}
 
     makeblastdb(preprocess_fasta.out.faa)
-    blast_input = fasta_chunks.combine(makeblastdb.out)
-    blastp(blast_input, fasta_count)
+    blast_input = fasta_chunks.combine(makeblastdb.out).combine(fasta_count)
+    blastp(blast_input)
     srv_transform(blastp.out)
 
     // save raw blast output
@@ -217,8 +217,7 @@ process blastp {
     array params.array
 
     input:
-        tuple path(faa), path(db)
-        val(count)
+        tuple path(faa), path(db), val(count)
 
     output:
         path('blast.tsv')
