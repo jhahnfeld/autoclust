@@ -205,7 +205,7 @@ process makeblastdb {
 
 process blastp {
     memory { 8.GB * task.attempt }
-    maxRetries 3
+    maxRetries 8
     array params.array
 
     input:
