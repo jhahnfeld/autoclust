@@ -41,15 +41,11 @@ workflow {
 
     // save raw blast output
     compress(blastp.out.collectFile(name: 'blast.tsv',
-                                    keepHeader: false,
-                                    cache: 'lenient',
-                                    sort: 'hash'))
+                                    keepHeader: false))
 
     // prune singletons, pairs and nodes that are connected only to one node of a graph
     prune(srv_transform.out.collectFile(name: 'srv.tsv',
-                                        keepHeader: false,
-                                        cache: 'lenient',
-                                        sort: 'hash'))
+                                        keepHeader: false))
 
     // load to binary mcl matrix; make the matrix symmetric (mean of SRVs)
     mcxload(prune.out)
@@ -84,9 +80,7 @@ workflow {
     // input: id_subgraph, inflation, clusters -> clusters
     // output: all clusters in one file
     autoclust = mcxdump_clusters.out.map{it[2]}.collectFile(name: 'auto.cluster.tsv',
-                                                            keepHeader: false,
-                                                            cache: 'lenient',
-                                                            sort: 'hash')
+                                                            keepHeader: false)
 
     // group mci.I and tab files together by their subgraph id for all inflation values
     // input: id_subgraph, inflation, mci.I; id_subgraph, mcx, tab
@@ -116,9 +110,7 @@ workflow {
 
     // group clusters by inflation value
     //clusters_by_inflation = mcxdump_for_cytoscape.out.groupTuple().map{it[1]}.flatten().collectFile(
-    //    keepHeader: false,
-    //    cache: 'lenient',
-    //    sort: 'hash'
+    //    keepHeader: false
     //).collect()
 
     // export the graph with cluster information for cytoscape
