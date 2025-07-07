@@ -119,7 +119,7 @@ def main():
                 args.input,
                 has_header=False,
                 new_columns=["query", "subject", "identity", "alignment_length", "bitscore", "evalue"],
-                schema_overrides={"bitscore": pl.Float64},
+                schema_overrides={"query": pl.String, "subject": pl.String, "bitscore": pl.Float64},
                 separator="\t",
             )
             .filter(
