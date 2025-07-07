@@ -471,7 +471,7 @@ process export_clusters_to_fasta {
         tuple val(id), val(inflation), path(clusters)
 
     output:
-        path('*.faa')
+        path('*.faa'), optional: true
 
     script:
     """
