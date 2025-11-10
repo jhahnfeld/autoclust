@@ -1,15 +1,12 @@
 #!/usr/bin/env nextflow
 
-nextflow.enable.dsl = 2
-
-import java.nio.file.*
-
 params.srv = 30
 params.selector = 'eff'
 params.id = params.srv
 params.cov = params.srv
 params.qcov = params.cov
 params.scov = params.cov
+params.neighbours = 0
 params.minsize = 3
 params.block = 100.KB
 
@@ -35,7 +32,11 @@ workflow {
     fasta_count = preprocess_fasta.out.count.map{f -> f.text.toInteger()}
 
     makeblastdb(preprocess_fasta.out.faa)
-    blast_input = fasta_chunks.combine(makeblastdb.out).combine(fasta_count)
+    if (params.neighbours > 0) {
+        blast_input = fasta_chunks.combine(makeblastdb.out).combine(Channel.of(params.neighbours))
+    } else {
+        blast_input = fasta_chunks.combine(makeblastdb.out).combine(fasta_count)
+    }
     blastp(blast_input)
     srv_transform(blastp.out)
 
@@ -174,12 +175,12 @@ process preprocess_fasta {
     script:
     if ( compressedFasta == true )
         """
-        pigz -dck $faa | grep -v '>' | sort -u | shuf | awk '{print ">"i++; print \$1}' | pigz -9 -p ${task.cpus} | \
+        pigz -dck $faa | grep -v '>' | sort -u | shuf | awk '{print ">"\$1; print \$1}' | pigz -9 -p ${task.cpus} | \
         tee sorted.faa.gz | zgrep -c '>' > faa.count
         """
     else
         """
-        grep -v '>' $faa | sort -u | shuf | awk '{print ">"i++; print \$1}' | pigz -9 -p ${task.cpus} | \
+        grep -v '>' $faa | sort -u | shuf | awk '{print ">"\$1; print \$1}' | pigz -9 -p ${task.cpus} | \
         tee sorted.faa.gz | zgrep -c '>' > faa.count
         """
 }
@@ -202,7 +203,8 @@ process makeblastdb {
     """
 }
 
-
+// max_target_seqs is limited to 500 to reduce the initial node degree; TODO find a more reasonable limit
+// see https://micans.org/mcl/man/clmprotocols.html
 process blastp {
     memory { 8.GB * task.attempt }
     maxRetries 8
@@ -375,7 +377,7 @@ process mcxload2 {
 
 process mcl {
     cpus { params.threads >= 4 * task.attempt * task.attempt ? 4 * task.attempt * task.attempt : params.threads }
-    memory { 1.GB * task.attempt }
+    maxRetries 5
     array params.array
 
     input:
